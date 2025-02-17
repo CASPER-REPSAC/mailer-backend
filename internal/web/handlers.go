@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/vanng822/go-premailer/premailer"
 	"html/template"
 	"log"
 	"mime"
@@ -297,9 +298,18 @@ func (h *APIHandler) EmailHandler(w http.ResponseWriter, r *http.Request) {
 				log.Printf("템플릿 렌더링 실패 (%s): %v", rec.Email, err)
 				continue
 			}
+			premail, err := premailer.NewPremailerFromString(body, premailer.NewOptions())
+			if err != nil {
+				log.Printf("프리메일러 생성 실패 (%s): %v", rec.Email, err)
+				continue
+			}
+			html, err := premail.Transform()
+			if err != nil {
+				log.Printf("프리메일러 변환 실패 (%s): %v", rec.Email, err)
+			}
 			for i := 0; i < 10; i++ {
 				time.Sleep(10 * time.Second)
-				if err := h.SMTPClient.SendEmail([]string{rec.Email}, reqData.Subject, body); err != nil {
+				if err := h.SMTPClient.SendEmail([]string{rec.Email}, reqData.Subject, html); err != nil {
 					log.Printf("이메일 발송 실패 (%s): %v", rec.Email, err)
 					continue
 				}
