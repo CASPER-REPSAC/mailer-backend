@@ -107,7 +107,6 @@ func (s *OIDCService) LoginHandler(w http.ResponseWriter, r *http.Request) {
 // It validates the state parameter, exchanges the code for tokens, verifies the ID token,
 // and finally saves the authenticated user information in the session.
 func (s *OIDCService) CallbackHandler(w http.ResponseWriter, r *http.Request) {
-	// 세션에서 저장된 state 값 확인
 	session, err := s.Store.Get(r, "oidc-session")
 	if err != nil {
 		http.Error(w, "Failed to get session", http.StatusBadRequest)
@@ -130,14 +129,12 @@ func (s *OIDCService) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 코드를 토큰으로 교환
 	token, err := s.OAuth2Config.Exchange(r.Context(), code)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to exchange token: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	// OAuth2 토큰에서 id_token을 추출
 	rawIDToken, ok := token.Extra("id_token").(string)
 	if !ok {
 		http.Error(w, "No id_token field in oauth2 token", http.StatusInternalServerError)
@@ -160,22 +157,19 @@ func (s *OIDCService) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 인증이 완료되었으므로 세션에 사용자 정보를 저장 (실제 서비스에서는 추가적인 사용자 저장 및 처리 필요)
 	session.Values["id_token"] = rawIDToken
 	session.Values["email"] = claims.Email
 	session.Values["name"] = claims.Name
-	// state 값은 더 이상 필요 없으므로 삭제
 	delete(session.Values, "state")
 	if err := session.Save(r, w); err != nil {
 		http.Error(w, "Failed to save session", http.StatusInternalServerError)
 		return
 	}
 
-	// 로그인 후 리디렉션할 URL을 지정 (예: 대시보드)
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-// AuthMiddleware 보호된 엔드포인트에 접근할 때 세션에 id_token이 있는지 확인합니다.
+// AuthMiddleware checks if the user is authenticated by verifying the presence of an ID token in the session.
 func (s *OIDCService) AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		session, err := s.Store.Get(r, "oidc-session")

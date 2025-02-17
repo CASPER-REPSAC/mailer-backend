@@ -16,7 +16,6 @@ import (
 	"mail-manager/internal/web"
 )
 
-// Config 구조체는 서비스 운영에 필요한 설정 항목들을 포함합니다.
 type Config struct {
 	Server struct {
 		Address string `yaml:"address"`
@@ -44,7 +43,6 @@ type Config struct {
 	} `yaml:"templates"`
 }
 
-// loadConfig 파일을 읽어 YAML로 파싱한 후 Config 구조체를 반환합니다.
 func loadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -58,23 +56,19 @@ func loadConfig(path string) (*Config, error) {
 }
 
 func main() {
-	// 커맨드라인 플래그에서 설정 파일 위치를 받습니다.
 	configFile := flag.String("config", "config/config.yaml", "path to the configuration file")
 	flag.Parse()
 
-	// 설정 파일 로드
 	cfg, err := loadConfig(*configFile)
 	if err != nil {
 		log.Fatalf("Error loading config: %v", err)
 	}
 	log.Printf("Configuration loaded: server will listen on %s", cfg.Server.Address)
 
-	// SESSION_KEY는 반드시 환경변수로 설정되어 있어야 함
 	if os.Getenv("SESSION_KEY") == "" {
 		log.Fatalf("환경변수 SESSION_KEY가 설정되어 있지 않습니다")
 	}
 
-	// OIDC 서비스 생성
 	oidcSvc, err := auth.NewOIDCService(&auth.OIDCConfig{
 		ProviderURL:  cfg.OIDC.ProviderURL,
 		ClientID:     cfg.OIDC.ClientID,
@@ -87,7 +81,6 @@ func main() {
 	}
 	log.Println("OIDC service initialized.")
 
-	// authentik 클라이언트 생성
 	authClient, err := auth.NewAuthentikClient(&auth.AuthentikConfig{
 		BaseURL:  cfg.Authentik.BaseURL,
 		ApiToken: cfg.Authentik.ApiToken,
@@ -97,7 +90,6 @@ func main() {
 	}
 	log.Println("Authentik client initialized.")
 
-	// SMTP 클라이언트 생성
 	smtpClient := email.NewSMTPClient(email.SMTPConfig{
 		Host:     cfg.SMTP.Host,
 		Port:     cfg.SMTP.Port,
@@ -107,9 +99,7 @@ func main() {
 	})
 	log.Println("SMTP client initialized.")
 
-	// 이메일 템플릿용 TemplateManager 생성
 	tmplManager := email.NewTemplateManager(cfg.Templates.Email)
-	// load all templates
 	files, err := os.ReadDir(cfg.Templates.Email)
 	if err != nil {
 		log.Fatalf("템플릿 디렉터리 읽기 실패: %v", err)
@@ -123,25 +113,19 @@ func main() {
 		}
 	}
 
-	// API 핸들러 생성
 	apiHandler := web.NewAPIHandler(oidcSvc, tmplManager, smtpClient, authClient)
 
 	mux := http.NewServeMux()
 
-	// 공개 엔드포인트 (OIDC 로그인 및 콜백)
 	mux.HandleFunc("/login", oidcSvc.LoginHandler)
 	mux.HandleFunc("/login/callback", oidcSvc.CallbackHandler)
 
-	// 보호된 API 엔드포인트 (OIDC 미들웨어로 인증 보호)
 	mux.Handle("/api/templates", oidcSvc.AuthMiddleware(http.HandlerFunc(apiHandler.TemplatesListHandler)))
 	mux.Handle("/api/templates/", oidcSvc.AuthMiddleware(http.HandlerFunc(apiHandler.TemplateHandler)))
-	// 추가: 미리보기용 엔드포인트 – URL 경로 형식: /api/templates/preview/{name}
 	mux.Handle("/api/templates/preview/", oidcSvc.AuthMiddleware(http.HandlerFunc(apiHandler.PreviewTemplateHandler)))
 	mux.Handle("/api/users", oidcSvc.AuthMiddleware(http.HandlerFunc(apiHandler.UsersHandler)))
 	mux.Handle("/api/email", oidcSvc.AuthMiddleware(http.HandlerFunc(apiHandler.EmailHandler)))
-	// 추가: 현재 로그인한 사용자 정보를 반환하는 엔드포인트
 	mux.Handle("/api/me", oidcSvc.AuthMiddleware(http.HandlerFunc(apiHandler.MeHandler)))
-	// 추가: 로그아웃 엔드포인트 (POST 요청)
 	mux.Handle("/logout", http.HandlerFunc(apiHandler.LogoutHandler))
 
 	// 전체 핸들러에 로깅 및 복구 미들웨어 적용

@@ -6,7 +6,6 @@ import (
 	"time"
 )
 
-// LoggingMiddleware 모든 요청에 대해 URL, 메서드 및 처리시간을 로깅합니다.
 func LoggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -16,7 +15,6 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// RecoveryMiddleware panic 발생 시 이를 복구하고 500 에러를 반환합니다.
 func RecoveryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {

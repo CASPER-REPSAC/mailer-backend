@@ -18,7 +18,6 @@ import (
 	"mail-manager/internal/email"
 )
 
-// APIHandler는 템플릿, 사용자, 이메일 발송 등 API 엔드포인트에 필요한 의존성을 보관합니다.
 type APIHandler struct {
 	OIDCService     *auth.OIDCService
 	TemplateManager *email.TemplateManager
@@ -26,7 +25,6 @@ type APIHandler struct {
 	AuthentikClient *auth.AuthentikClient
 }
 
-// NewAPIHandler는 APIHandler 인스턴스를 생성합니다.
 func NewAPIHandler(oidc *auth.OIDCService, tm *email.TemplateManager, smtp *email.SMTPClient, authClient *auth.AuthentikClient) *APIHandler {
 	return &APIHandler{
 		OIDCService:     oidc,
@@ -170,7 +168,6 @@ func (h *APIHandler) TemplateHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // PreviewTemplateHandler handles POST /api/templates/preview/{name}.
-// 클라이언트가 수정한 템플릿 내용을 받아 샘플 데이터로 렌더링한 HTML을 반환합니다.
 func (h *APIHandler) PreviewTemplateHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "지원하지 않는 메서드입니다.", http.StatusMethodNotAllowed)
