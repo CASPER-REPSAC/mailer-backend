@@ -284,35 +284,33 @@ func (h *APIHandler) EmailHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "필수 필드가 누락되었습니다.", http.StatusBadRequest)
 		return
 	}
+	go func(recipients []RecipientInfo) {
+		for _, rec := range recipients {
+			data := map[string]interface{}{
+				"name":  rec.Name,
+				"email": rec.Email,
+				"year":  time.Now().Year(),
+			}
 
-	successCount := 0
-	// 각 수신자에 대해 템플릿 렌더링 후 개별 이메일 발송
-	for _, rec := range reqData.Recipient {
-		// 템플릿 내 플레이스홀더에 사용할 데이터 (예: {{.name}}, {{.email}}, {{.year}})
-		data := map[string]interface{}{
-			"name":  rec.Name,
-			"email": rec.Email,
-			"year":  time.Now().Year(),
-		}
-
-		body, err := h.TemplateManager.RenderTemplate(reqData.Template, data)
-		if err != nil {
-			log.Printf("템플릿 렌더링 실패 (%s): %v", rec.Email, err)
-			continue
-		}
-
-		go func() {
-			if err := h.SMTPClient.SendEmail([]string{rec.Email}, reqData.Subject, body); err != nil {
-				log.Printf("이메일 발송 실패 (%s): %v", rec.Email, err)
-				return
+			body, err := h.TemplateManager.RenderTemplate(reqData.Template, data)
+			if err != nil {
+				log.Printf("템플릿 렌더링 실패 (%s): %v", rec.Email, err)
+				continue
+			}
+			for i := 0; i < 10; i++ {
+				time.Sleep(10 * time.Second)
+				if err := h.SMTPClient.SendEmail([]string{rec.Email}, reqData.Subject, body); err != nil {
+					log.Printf("이메일 발송 실패 (%s): %v", rec.Email, err)
+					continue
+				}
+				break
 			}
 			log.Printf("이메일 발송 성공 (%s)", rec.Email)
-		}()
-		successCount++
-	}
+		}
+	}(reqData.Recipient)
 
 	response := map[string]interface{}{
-		"message": fmt.Sprintf("총 %d명의 수신자에게 이메일 발송에 성공했습니다.", successCount),
+		"message": fmt.Sprintf("총 %d명의 수신자에게 이메일을 발송합니다.", len(reqData.Recipient)),
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(response)
