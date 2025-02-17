@@ -220,7 +220,6 @@ func (h *APIHandler) PreviewTemplateHandler(w http.ResponseWriter, r *http.Reque
 	// 미리보기용 샘플 데이터(요구사항에 따른 플레이스홀더 치환)
 	sampleData := map[string]interface{}{
 		"name":  "홍길동",
-		"group": "테스터",
 		"email": "test@example.com",
 		"year":  2025,
 	}
@@ -234,6 +233,15 @@ func (h *APIHandler) PreviewTemplateHandler(w http.ResponseWriter, r *http.Reque
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
+	premail, err := premailer.NewPremailerFromString(renderedHTML, premailer.NewOptions())
+	if err != nil {
+		http.Error(w, fmt.Sprintf("프리메일러 생성 실패: %v", err), http.StatusInternalServerError)
+		return
+	}
+	renderedHTML, err = premail.Transform()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("프리메일러 변환 실패: %v", err), http.StatusInternalServerError)
+	}
 	_, _ = w.Write([]byte(renderedHTML))
 }
 
