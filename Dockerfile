@@ -1,4 +1,3 @@
-# Stage 1: 빌드 단계
 FROM golang:1.23 AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
