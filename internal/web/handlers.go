@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/vanng822/go-premailer/premailer"
+	"html"
 	"html/template"
+	"io"
 	"log"
 	"mime"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vanng822/go-premailer/premailer"
 	"mail-manager/internal/auth"
 	"mail-manager/internal/email"
 )
@@ -24,18 +26,19 @@ type APIHandler struct {
 	TemplateManager *email.TemplateManager
 	SMTPClient      *email.SMTPClient
 	AuthentikClient *auth.AuthentikClient
+	ImageDir        string
 }
 
-func NewAPIHandler(oidc *auth.OIDCService, tm *email.TemplateManager, smtp *email.SMTPClient, authClient *auth.AuthentikClient) *APIHandler {
+func NewAPIHandler(oidc *auth.OIDCService, tm *email.TemplateManager, smtp *email.SMTPClient, authClient *auth.AuthentikClient, imageDir string) *APIHandler {
 	return &APIHandler{
 		OIDCService:     oidc,
 		TemplateManager: tm,
 		SMTPClient:      smtp,
 		AuthentikClient: authClient,
+		ImageDir:        imageDir,
 	}
 }
 
-// MeHandler handles GET /api/me by returning the current logged-in user's info.
 func (h *APIHandler) MeHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "지원하지 않는 메서드입니다.", http.StatusMethodNotAllowed)
@@ -63,7 +66,6 @@ func (h *APIHandler) MeHandler(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(response)
 }
 
-// TemplatesListHandler handles GET /api/templates to list loaded template names.
 func (h *APIHandler) TemplatesListHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "지원하지 않는 메서드입니다.", http.StatusMethodNotAllowed)
@@ -108,7 +110,6 @@ func (h *APIHandler) TemplateHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(response)
-
 	case http.MethodPost:
 		var reqData struct {
 			Content string `json:"content"`
@@ -144,7 +145,6 @@ func (h *APIHandler) TemplateHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(response)
-
 	case http.MethodDelete:
 		if tmplName == "default" {
 			http.Error(w, "기본 템플릿은 삭제할 수 없습니다.", http.StatusBadRequest)
@@ -155,20 +155,17 @@ func (h *APIHandler) TemplateHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("템플릿 삭제에 실패하였습니다: %v", err), http.StatusInternalServerError)
 			return
 		}
-		// 캐시에서도 제거
 		h.TemplateManager.DeleteTemplate(tmplName)
 		response := map[string]interface{}{
 			"message": "템플릿이 삭제되었습니다.",
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(response)
-
 	default:
 		http.Error(w, "지원하지 않는 메서드입니다.", http.StatusMethodNotAllowed)
 	}
 }
 
-// PreviewTemplateHandler handles POST /api/templates/preview/{name}.
 func (h *APIHandler) PreviewTemplateHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "지원하지 않는 메서드입니다.", http.StatusMethodNotAllowed)
@@ -197,27 +194,35 @@ func (h *APIHandler) PreviewTemplateHandler(w http.ResponseWriter, r *http.Reque
 	var tpl *template.Template
 	var err error
 	if reqData.Content != "" {
-		tpl, err = template.New(tmplName).Parse(reqData.Content)
+		tpl, err = template.New(tmplName).Funcs(template.FuncMap{
+			"image": func(imageSrc string) template.HTML {
+				return template.HTML(fmt.Sprintf("<img src=\"%s\" alt=\"\" style=\"max-width: 100%%; height: auto;\">",
+					html.EscapeString("/api/images/"+imageSrc)))
+			},
+		}).Parse(reqData.Content)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("템플릿 파싱 실패: %v", err), http.StatusBadRequest)
 			return
 		}
 	} else {
-		// 내용이 제공되지 않으면, 기존 파일을 사용합니다.
 		filePath := filepath.Join(h.TemplateManager.BaseDir(), tmplName+".html")
 		contentBytes, err := os.ReadFile(filePath)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("템플릿을 찾을 수 없습니다: %s", tmplName), http.StatusNotFound)
 			return
 		}
-		tpl, err = template.New(tmplName).Parse(string(contentBytes))
+		tpl, err = template.New(tmplName).Funcs(template.FuncMap{
+			"image": func(imageSrc string) template.HTML {
+				return template.HTML(fmt.Sprintf("<img src=\"%s\" alt=\"\" style=\"max-width: 100%%; height: auto;\">",
+					html.EscapeString("/api/images/"+imageSrc)))
+			},
+		}).Parse(string(contentBytes))
 		if err != nil {
 			http.Error(w, fmt.Sprintf("템플릿 파싱 실패: %v", err), http.StatusInternalServerError)
 			return
 		}
 	}
 
-	// 미리보기용 샘플 데이터(요구사항에 따른 플레이스홀더 치환)
 	sampleData := map[string]interface{}{
 		"name":  "홍길동",
 		"email": "test@example.com",
@@ -230,7 +235,6 @@ func (h *APIHandler) PreviewTemplateHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	renderedHTML := buf.String()
-
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	premail, err := premailer.NewPremailerFromString(renderedHTML, premailer.NewOptions())
@@ -241,11 +245,11 @@ func (h *APIHandler) PreviewTemplateHandler(w http.ResponseWriter, r *http.Reque
 	renderedHTML, err = premail.Transform()
 	if err != nil {
 		http.Error(w, fmt.Sprintf("프리메일러 변환 실패: %v", err), http.StatusInternalServerError)
+		return
 	}
 	_, _ = w.Write([]byte(renderedHTML))
 }
 
-// UsersHandler handles GET /api/users to return the list of users.
 func (h *APIHandler) UsersHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "지원하지 않는 메서드입니다.", http.StatusMethodNotAllowed)
@@ -262,33 +266,28 @@ func (h *APIHandler) UsersHandler(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(users)
 }
 
-// EmailHandler handles POST /api/email to send emails.
 func (h *APIHandler) EmailHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "지원하지 않는 메서드입니다.", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// RecipientInfo 구조체: 각 수신자의 이름과 이메일을 받습니다.
 	type RecipientInfo struct {
 		Name  string `json:"name"`
 		Email string `json:"email"`
 	}
 
-	// JSON 페이로드 구조 정의
 	var reqData struct {
 		Template  string          `json:"template"`
 		Subject   string          `json:"subject"`
 		Recipient []RecipientInfo `json:"recipient"`
 	}
 
-	// JSON 디코딩
 	if err := json.NewDecoder(r.Body).Decode(&reqData); err != nil {
 		http.Error(w, "올바르지 않은 JSON 페이로드입니다.", http.StatusBadRequest)
 		return
 	}
 
-	// 필수 필드 검증
 	if reqData.Template == "" || reqData.Subject == "" || len(reqData.Recipient) == 0 {
 		http.Error(w, "필수 필드가 누락되었습니다.", http.StatusBadRequest)
 		return
@@ -300,8 +299,7 @@ func (h *APIHandler) EmailHandler(w http.ResponseWriter, r *http.Request) {
 				"email": rec.Email,
 				"year":  time.Now().Year(),
 			}
-
-			body, err := h.TemplateManager.RenderTemplate(reqData.Template, data)
+			body, attachments, err := h.TemplateManager.RenderTemplate(reqData.Template, data)
 			if err != nil {
 				log.Printf("템플릿 렌더링 실패 (%s): %v", rec.Email, err)
 				continue
@@ -316,9 +314,9 @@ func (h *APIHandler) EmailHandler(w http.ResponseWriter, r *http.Request) {
 				log.Printf("프리메일러 변환 실패 (%s): %v", rec.Email, err)
 			}
 			for i := 0; i < 10; i++ {
-				time.Sleep(10 * time.Second)
-				if err := h.SMTPClient.SendEmail([]string{rec.Email}, reqData.Subject, html); err != nil {
+				if err := h.SMTPClient.SendEmail([]string{rec.Email}, reqData.Subject, html, attachments); err != nil {
 					log.Printf("이메일 발송 실패 (%s): %v", rec.Email, err)
+					time.Sleep(10 * time.Second)
 					continue
 				}
 				break
@@ -334,7 +332,6 @@ func (h *APIHandler) EmailHandler(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(response)
 }
 
-// LogoutHandler handles POST /logout to clear the user session.
 func (h *APIHandler) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "지원하지 않는 메서드입니다.", http.StatusMethodNotAllowed)
@@ -352,4 +349,102 @@ func (h *APIHandler) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"message": "로그아웃 되었습니다."})
+}
+
+func (h *APIHandler) ImageUploadHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		http.Error(w, "", http.StatusInternalServerError)
+		return
+	}
+	file, handler, err := r.FormFile("image")
+	if err != nil {
+		http.Error(w, "", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+	allowed := map[string]bool{"image/jpeg": true, "image/png": true, "image/gif": true, "image/bmp": true}
+	if !allowed[handler.Header.Get("Content-Type")] {
+		http.Error(w, "", http.StatusBadRequest)
+		return
+	}
+	if strings.Contains(handler.Filename, "/") || handler.Filename == "upload" {
+		http.Error(w, "", http.StatusBadRequest)
+		return
+	}
+	imagePath := filepath.Join(h.ImageDir, handler.Filename)
+	out, err := os.Create(imagePath)
+	if err != nil {
+		http.Error(w, "", http.StatusInternalServerError)
+		return
+	}
+	defer out.Close()
+	_, _ = io.Copy(out, file)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"message": "uploaded", "url": "/api/images/" + handler.Filename})
+}
+
+func (h *APIHandler) ImageServeHandler(w http.ResponseWriter, r *http.Request) {
+	const prefix = "/api/images/"
+	if !strings.HasPrefix(r.URL.Path, prefix) {
+		http.Error(w, "", http.StatusBadRequest)
+		return
+	}
+	filename := strings.TrimPrefix(r.URL.Path, prefix)
+	filename = path.Clean(filename)
+	if filename == "" || filename == "." || filename == "/" {
+		http.Error(w, "", http.StatusBadRequest)
+		return
+	}
+	imagePath := filepath.Join(h.ImageDir, filename)
+	http.ServeFile(w, r, imagePath)
+}
+
+func (h *APIHandler) ImageListHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "", http.StatusMethodNotAllowed)
+		return
+	}
+	files, err := os.ReadDir(h.ImageDir)
+	if err != nil {
+		http.Error(w, "", http.StatusInternalServerError)
+		return
+	}
+	var imgs []string
+	allowedExt := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".bmp": true}
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(f.Name()))
+		if allowedExt[ext] {
+			imgs = append(imgs, f.Name())
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"images": imgs})
+}
+
+func (h *APIHandler) ImageDeleteHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "", http.StatusMethodNotAllowed)
+		return
+	}
+	const prefix = "/api/images/"
+	filename := strings.TrimPrefix(r.URL.Path, prefix)
+	filename = path.Clean(filename)
+	if filename == "" || filename == "." || filename == "/" {
+		http.Error(w, "", http.StatusBadRequest)
+		return
+	}
+	filePath := filepath.Join(h.ImageDir, filename)
+	if err := os.Remove(filePath); err != nil {
+		http.Error(w, fmt.Sprintf("error: %v", err), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"message": "deleted"})
 }

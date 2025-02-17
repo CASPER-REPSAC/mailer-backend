@@ -40,6 +40,7 @@ type Config struct {
 	} `yaml:"smtp"`
 	Templates struct {
 		Email string `yaml:"email"`
+		Image string `yaml:"image"`
 	} `yaml:"templates"`
 }
 
@@ -99,7 +100,7 @@ func main() {
 	})
 	log.Println("SMTP client initialized.")
 
-	tmplManager := email.NewTemplateManager(cfg.Templates.Email)
+	tmplManager := email.NewTemplateManager(cfg.Templates.Email, cfg.Templates.Image)
 	files, err := os.ReadDir(cfg.Templates.Email)
 	if err != nil {
 		log.Fatalf("템플릿 디렉터리 읽기 실패: %v", err)
@@ -113,8 +114,7 @@ func main() {
 		}
 	}
 
-	apiHandler := web.NewAPIHandler(oidcSvc, tmplManager, smtpClient, authClient)
-
+	apiHandler := web.NewAPIHandler(oidcSvc, tmplManager, smtpClient, authClient, cfg.Templates.Image)
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/login", oidcSvc.LoginHandler)
@@ -126,6 +126,18 @@ func main() {
 	mux.Handle("/api/users", oidcSvc.AuthMiddleware(http.HandlerFunc(apiHandler.UsersHandler)))
 	mux.Handle("/api/email", oidcSvc.AuthMiddleware(http.HandlerFunc(apiHandler.EmailHandler)))
 	mux.Handle("/api/me", oidcSvc.AuthMiddleware(http.HandlerFunc(apiHandler.MeHandler)))
+	mux.Handle("/api/images/upload", oidcSvc.AuthMiddleware(http.HandlerFunc(apiHandler.ImageUploadHandler)))
+	mux.Handle("/api/images/", oidcSvc.AuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			apiHandler.ImageDeleteHandler(w, r)
+		} else if r.Method == http.MethodGet && r.URL.Path == "/api/images/" {
+			apiHandler.ImageListHandler(w, r)
+		} else if r.Method == http.MethodGet {
+			apiHandler.ImageServeHandler(w, r)
+		} else {
+			http.Error(w, "", http.StatusMethodNotAllowed)
+		}
+	})))
 	mux.Handle("/logout", http.HandlerFunc(apiHandler.LogoutHandler))
 
 	// 전체 핸들러에 로깅 및 복구 미들웨어 적용

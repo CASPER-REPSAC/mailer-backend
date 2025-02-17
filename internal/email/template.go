@@ -3,7 +3,10 @@ package email
 import (
 	"bytes"
 	"fmt"
+	"github.com/jordan-wright/email"
 	"html/template"
+	"net/textproto"
+	"os"
 	"path/filepath"
 	"sync"
 )
@@ -14,14 +17,16 @@ import (
 type TemplateManager struct {
 	templates map[string]*template.Template
 	baseDir   string
+	imageDir  string
 	mu        sync.RWMutex
 }
 
 // NewTemplateManager initializes and returns a new TemplateManager with the provided base directory.
-func NewTemplateManager(baseDir string) *TemplateManager {
+func NewTemplateManager(baseDir string, imageDir string) *TemplateManager {
 	return &TemplateManager{
 		templates: make(map[string]*template.Template),
 		baseDir:   baseDir,
+		imageDir:  imageDir,
 	}
 }
 
@@ -33,7 +38,12 @@ func (tm *TemplateManager) BaseDir() string {
 // 예: 이름 "default"로 "default.html" 파일을 로드하여 캐시에 저장합니다.
 func (tm *TemplateManager) LoadTemplate(name, filename string) error {
 	fullPath := filepath.Join(tm.baseDir, filename)
-	tmpl, err := template.ParseFiles(fullPath)
+	tmpl, err := template.New(filename).Funcs(template.FuncMap{
+		// Dummy image function that does nothing
+		"image": func(imageSrc string) string {
+			return ""
+		},
+	}).ParseFiles(fullPath)
 	if err != nil {
 		return fmt.Errorf("failed to parse template file %s: %v", fullPath, err)
 	}
@@ -45,18 +55,42 @@ func (tm *TemplateManager) LoadTemplate(name, filename string) error {
 
 // RenderTemplate executes the cached template identified by name using the provided data.
 // 데이터는 예를 들어 map[string]interface{} 형태로 전달할 수 있습니다.
-func (tm *TemplateManager) RenderTemplate(name string, data interface{}) (string, error) {
+func (tm *TemplateManager) RenderTemplate(name string, data interface{}) (string, []email.Attachment, error) {
 	tm.mu.RLock()
 	tmpl, exists := tm.templates[name]
 	tm.mu.RUnlock()
 	if !exists {
-		return "", fmt.Errorf("template %s not found", name)
+		return "", nil, fmt.Errorf("template %s not found", name)
 	}
 	var buf bytes.Buffer
+	var attachments []email.Attachment
+	tmpl.Funcs(template.FuncMap{
+		"image": func(imageSrc string) template.HTML {
+			imagePath := filepath.Join(tm.imageDir, imageSrc)
+			if _, err := os.Stat(imagePath); err != nil {
+				return template.HTML(fmt.Sprintf("Image not found: %s", imageSrc))
+			}
+			content, err := os.ReadFile(imagePath)
+			if err != nil {
+				return template.HTML(fmt.Sprintf("Failed to read image: %s", imageSrc))
+			}
+			header := textproto.MIMEHeader{
+				"Content-ID": {fmt.Sprintf("<%s>", imageSrc)},
+			}
+			attachments = append(attachments, email.Attachment{
+				Filename:    imageSrc,
+				Content:     content,
+				HTMLRelated: true,
+				ContentType: fmt.Sprintf("image/%s", filepath.Ext(imageSrc)[1:]),
+				Header:      header,
+			})
+			return template.HTML(fmt.Sprintf("<img src='cid:%s' alt='%s'>", imageSrc, imageSrc))
+		},
+	})
 	if err := tmpl.Execute(&buf, data); err != nil {
-		return "", fmt.Errorf("failed to execute template %s: %v", name, err)
+		return "", nil, fmt.Errorf("failed to execute template %s: %v", name, err)
 	}
-	return buf.String(), nil
+	return buf.String(), attachments, nil
 }
 
 // ListTemplates returns a slice of the names of the currently loaded templates.
