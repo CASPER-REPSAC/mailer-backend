@@ -12,7 +12,7 @@ require (
 )
 
 require (
-	github.com/go-jose/go-jose/v4 v4.0.2 // indirect
+	github.com/go-jose/go-jose/v4 v4.0.4 // indirect
 	github.com/gorilla/securecookie v1.1.2 // indirect
-	golang.org/x/crypto v0.25.0 // indirect
+	golang.org/x/crypto v0.33.0 // indirect
 )
