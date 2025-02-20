@@ -196,8 +196,12 @@ func (h *APIHandler) PreviewTemplateHandler(w http.ResponseWriter, r *http.Reque
 	if reqData.Content != "" {
 		tpl, err = template.New(tmplName).Funcs(template.FuncMap{
 			"image": func(imageSrc string) template.HTML {
-				return template.HTML(fmt.Sprintf("<img src=\"%s\" alt=\"\" style=\"max-width: 100%%; height: auto;\">",
+				return template.HTML(fmt.Sprintf("<img src=\"%s\" style=\"max-width: 100%%; height: auto;\">",
 					html.EscapeString("/api/images/"+imageSrc)))
+			},
+			"imageWithSize": func(imageSrc, width, height string) template.HTML {
+				return template.HTML(fmt.Sprintf("<img src=\"%s\" width=\"%s\" height=\"%s\">",
+					html.EscapeString("/api/images/"+imageSrc), html.EscapeString(width), html.EscapeString(height)))
 			},
 		}).Parse(reqData.Content)
 		if err != nil {
@@ -309,12 +313,12 @@ func (h *APIHandler) EmailHandler(w http.ResponseWriter, r *http.Request) {
 				log.Printf("프리메일러 생성 실패 (%s): %v", rec.Email, err)
 				continue
 			}
-			html, err := premail.Transform()
+			htm, err := premail.Transform()
 			if err != nil {
 				log.Printf("프리메일러 변환 실패 (%s): %v", rec.Email, err)
 			}
 			for i := 0; i < 10; i++ {
-				if err := h.SMTPClient.SendEmail([]string{rec.Email}, reqData.Subject, html, attachments); err != nil {
+				if err := h.SMTPClient.SendEmail([]string{rec.Email}, reqData.Subject, htm, attachments); err != nil {
 					log.Printf("이메일 발송 실패 (%s): %v", rec.Email, err)
 					time.Sleep(10 * time.Second)
 					continue

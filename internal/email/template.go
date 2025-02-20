@@ -43,6 +43,9 @@ func (tm *TemplateManager) LoadTemplate(name, filename string) error {
 		"image": func(imageSrc string) string {
 			return ""
 		},
+		"imageWithSize": func(imageSrc, width, height string) string {
+			return ""
+		},
 	}).ParseFiles(fullPath)
 	if err != nil {
 		return fmt.Errorf("failed to parse template file %s: %v", fullPath, err)
@@ -84,7 +87,28 @@ func (tm *TemplateManager) RenderTemplate(name string, data interface{}) (string
 				ContentType: fmt.Sprintf("image/%s", filepath.Ext(imageSrc)[1:]),
 				Header:      header,
 			})
-			return template.HTML(fmt.Sprintf("<img src='cid:%s' alt='%s'>", imageSrc, imageSrc))
+			return template.HTML(fmt.Sprintf("<img src=\"cid:%s\" alt=\"%s\">", imageSrc, imageSrc))
+		},
+		"imageWithSize": func(imageSrc, width, height string) template.HTML {
+			imagePath := filepath.Join(tm.imageDir, imageSrc)
+			if _, err := os.Stat(imagePath); err != nil {
+				return template.HTML(fmt.Sprintf("Image not found: %s", imageSrc))
+			}
+			content, err := os.ReadFile(imagePath)
+			if err != nil {
+				return template.HTML(fmt.Sprintf("Failed to read image: %s", imageSrc))
+			}
+			header := textproto.MIMEHeader{
+				"Content-ID": {fmt.Sprintf("<%s>", imageSrc)},
+			}
+			attachments = append(attachments, email.Attachment{
+				Filename:    imageSrc,
+				Content:     content,
+				HTMLRelated: true,
+				ContentType: fmt.Sprintf("image/%s", filepath.Ext(imageSrc)[1:]),
+				Header:      header,
+			})
+			return template.HTML(fmt.Sprintf("<img src=\"cid:%s\" alt=\"%s\" width=\"%s\" height=\"%s\">", imageSrc, imageSrc, width, height))
 		},
 	})
 	if err := tmpl.Execute(&buf, data); err != nil {
