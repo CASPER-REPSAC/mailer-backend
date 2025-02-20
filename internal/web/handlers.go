@@ -203,6 +203,9 @@ func (h *APIHandler) PreviewTemplateHandler(w http.ResponseWriter, r *http.Reque
 				return template.HTML(fmt.Sprintf("<img src=\"%s\" width=\"%s\" height=\"%s\">",
 					html.EscapeString("/api/images/"+imageSrc), html.EscapeString(width), html.EscapeString(height)))
 			},
+			"property": func(key string) template.HTML {
+				return template.HTML(fmt.Sprintf("<code>PROPERTY(%s)</code>", key))
+			},
 		}).Parse(reqData.Content)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("템플릿 파싱 실패: %v", err), http.StatusBadRequest)
@@ -219,6 +222,13 @@ func (h *APIHandler) PreviewTemplateHandler(w http.ResponseWriter, r *http.Reque
 			"image": func(imageSrc string) template.HTML {
 				return template.HTML(fmt.Sprintf("<img src=\"%s\" alt=\"\" style=\"max-width: 100%%; height: auto;\">",
 					html.EscapeString("/api/images/"+imageSrc)))
+			},
+			"imageWithSize": func(imageSrc, width, height string) template.HTML {
+				return template.HTML(fmt.Sprintf("<img src=\"%s\" width=\"%s\" height=\"%s\">",
+					html.EscapeString("/api/images/"+imageSrc), html.EscapeString(width), html.EscapeString(height)))
+			},
+			"property": func(key string) template.HTML {
+				return template.HTML(fmt.Sprintf("<code>PROPERTY(%s)</code>", key))
 			},
 		}).Parse(string(contentBytes))
 		if err != nil {
@@ -277,8 +287,9 @@ func (h *APIHandler) EmailHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type RecipientInfo struct {
-		Name  string `json:"name"`
-		Email string `json:"email"`
+		Name   string            `json:"name"`
+		Email  string            `json:"email"`
+		Custom map[string]string `json:"custom,omitempty"`
 	}
 
 	var reqData struct {
@@ -299,9 +310,10 @@ func (h *APIHandler) EmailHandler(w http.ResponseWriter, r *http.Request) {
 	go func(recipients []RecipientInfo) {
 		for _, rec := range recipients {
 			data := map[string]interface{}{
-				"name":  rec.Name,
-				"email": rec.Email,
-				"year":  time.Now().Year(),
+				"name":   rec.Name,
+				"email":  rec.Email,
+				"year":   time.Now().Year(),
+				"custom": rec.Custom,
 			}
 			body, attachments, err := h.TemplateManager.RenderTemplate(reqData.Template, data)
 			if err != nil {
