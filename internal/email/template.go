@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/jordan-wright/email"
+	"golang.org/x/crypto/sha3"
 	"html/template"
 	"net/textproto"
 	"os"
@@ -68,6 +69,10 @@ func (tm *TemplateManager) RenderTemplate(name string, data interface{}) (string
 			if err != nil {
 				return template.HTML(fmt.Sprintf("Failed to read image: %s", imageSrc))
 			}
+			// Inline images must have unique names
+			// 메일 읽지도 않았는데 탈락 이미지 이름이 미리보기에 나오면 슬프지 않을까요?
+			ext := filepath.Ext(imageSrc)
+			imageSrc = fmt.Sprintf("%s%s", hashString(imageSrc), ext)
 			header := textproto.MIMEHeader{
 				"Content-ID": {fmt.Sprintf("<%s>", imageSrc)},
 			}
@@ -89,6 +94,10 @@ func (tm *TemplateManager) RenderTemplate(name string, data interface{}) (string
 			if err != nil {
 				return template.HTML(fmt.Sprintf("Failed to read image: %s", imageSrc))
 			}
+			// Inline images must have unique names
+			// 메일 읽지도 않았는데 탈락 이미지 이름이 미리보기에 나오면 슬프지 않을까요?
+			ext := filepath.Ext(imageSrc)
+			imageSrc = fmt.Sprintf("%s-%s%s", hashString(imageSrc), width, ext)
 			header := textproto.MIMEHeader{
 				"Content-ID": {fmt.Sprintf("<%s>", imageSrc)},
 			}
@@ -147,4 +156,10 @@ func (tm *TemplateManager) DeleteTemplate(name string) {
 
 func (tm *TemplateManager) Templates() map[string]*template.Template {
 	return tm.ExportedTemplates()
+}
+
+func hashString(s string) string {
+	h := sha3.New512()
+	h.Write([]byte(s))
+	return fmt.Sprintf("%x", h.Sum(nil))
 }
