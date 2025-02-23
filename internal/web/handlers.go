@@ -193,48 +193,22 @@ func (h *APIHandler) PreviewTemplateHandler(w http.ResponseWriter, r *http.Reque
 
 	var tpl *template.Template
 	var err error
-	if reqData.Content != "" {
-		tpl, err = template.New(tmplName).Funcs(template.FuncMap{
-			"image": func(imageSrc string) template.HTML {
-				return template.HTML(fmt.Sprintf("<img src=\"%s\" style=\"max-width: 100%%; height: auto;\">",
-					html.EscapeString("/api/images/"+imageSrc)))
-			},
-			"imageWithSize": func(imageSrc, width, height string) template.HTML {
-				return template.HTML(fmt.Sprintf("<img src=\"%s\" width=\"%s\" height=\"%s\">",
-					html.EscapeString("/api/images/"+imageSrc), html.EscapeString(width), html.EscapeString(height)))
-			},
-			"property": func(key string) template.HTML {
-				return template.HTML(fmt.Sprintf("<code>PROPERTY(%s)</code>", key))
-			},
-		}).Parse(reqData.Content)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("템플릿 파싱 실패: %v", err), http.StatusBadRequest)
-			return
-		}
-	} else {
-		filePath := filepath.Join(h.TemplateManager.BaseDir(), tmplName+".html")
-		contentBytes, err := os.ReadFile(filePath)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("템플릿을 찾을 수 없습니다: %s", tmplName), http.StatusNotFound)
-			return
-		}
-		tpl, err = template.New(tmplName).Funcs(template.FuncMap{
-			"image": func(imageSrc string) template.HTML {
-				return template.HTML(fmt.Sprintf("<img src=\"%s\" alt=\"\" style=\"max-width: 100%%; height: auto;\">",
-					html.EscapeString("/api/images/"+imageSrc)))
-			},
-			"imageWithSize": func(imageSrc, width, height string) template.HTML {
-				return template.HTML(fmt.Sprintf("<img src=\"%s\" width=\"%s\" height=\"%s\">",
-					html.EscapeString("/api/images/"+imageSrc), html.EscapeString(width), html.EscapeString(height)))
-			},
-			"property": func(key string) template.HTML {
-				return template.HTML(fmt.Sprintf("<code>PROPERTY(%s)</code>", key))
-			},
-		}).Parse(string(contentBytes))
-		if err != nil {
-			http.Error(w, fmt.Sprintf("템플릿 파싱 실패: %v", err), http.StatusInternalServerError)
-			return
-		}
+	tpl, err = template.New(tmplName).Funcs(template.FuncMap{
+		"image": func(imageSrc string) template.HTML {
+			return template.HTML(fmt.Sprintf("<img src=\"%s\" style=\"max-width: 100%%; height: auto;\">",
+				html.EscapeString("/api/images/"+imageSrc)))
+		},
+		"imageWithSize": func(imageSrc, width, height string) template.HTML {
+			return template.HTML(fmt.Sprintf("<img src=\"%s\" width=\"%s\" height=\"%s\">",
+				html.EscapeString("/api/images/"+imageSrc), html.EscapeString(width), html.EscapeString(height)))
+		},
+		"property": func(key string) template.HTML {
+			return template.HTML(fmt.Sprintf("<code>PROPERTY(%s)</code>", key))
+		},
+	}).Parse(reqData.Content)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("템플릿 파싱 실패: %v", err), http.StatusBadRequest)
+		return
 	}
 
 	sampleData := map[string]interface{}{
@@ -249,8 +223,6 @@ func (h *APIHandler) PreviewTemplateHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	renderedHTML := buf.String()
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
 	premail, err := premailer.NewPremailerFromString(renderedHTML, premailer.NewOptions())
 	if err != nil {
 		http.Error(w, fmt.Sprintf("프리메일러 생성 실패: %v", err), http.StatusInternalServerError)
@@ -261,6 +233,8 @@ func (h *APIHandler) PreviewTemplateHandler(w http.ResponseWriter, r *http.Reque
 		http.Error(w, fmt.Sprintf("프리메일러 변환 실패: %v", err), http.StatusInternalServerError)
 		return
 	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(renderedHTML))
 }
 
