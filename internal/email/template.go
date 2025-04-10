@@ -83,7 +83,8 @@ func (tm *TemplateManager) RenderTemplate(name string, data interface{}) (string
 				ContentType: fmt.Sprintf("image/%s", filepath.Ext(imageSrc)[1:]),
 				Header:      header,
 			})
-			return template.HTML(fmt.Sprintf("<img src=\"cid:%s\" alt=\"%s\">", imageSrc, imageSrc))
+			// when without width, email client will use the original size... so we need to set width to 100%
+			return template.HTML(fmt.Sprintf("<img src=\"cid:%s\" alt=\"%s\" width=\"100%%\">", imageSrc, imageSrc))
 		},
 		"imageWithSize": func(imageSrc, width, height string) template.HTML {
 			imagePath := filepath.Join(tm.imageDir, imageSrc)
